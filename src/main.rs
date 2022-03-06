@@ -272,9 +272,7 @@ impl Application for App {
         let split_button2 = Button::new(&mut self.split_button.1, Text::new("BNBUSDT")).on_press(
             Message::SplitButton(button::State::new(), String::from("bnbusdt")),
         );
-        let side_pane_col=Column::new().push(split_button).push(split_button2).align_items(Align::Center).width(Length::Fill)
-        .height(Length::Fill);
-
+        let side_pane_col=Column::new().push(split_button).push(split_button2);
 
         let app_row = Row::with_children(vec![ side_pane_col.into(),table.view(),])
             .spacing(10)
