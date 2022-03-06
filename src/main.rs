@@ -26,6 +26,7 @@ use fetcher::State;
 use std::sync::mpsc::Receiver;
 use tokio::runtime::Runtime;
 // #[derive(Default)]
+//Creates mpsc sender and receiver transferring data between threads
 struct CaptureMsg {
     tx: SyncSender<Vec<Coin>>,
     rx: Receiver<Vec<Coin>>,
@@ -42,13 +43,16 @@ impl CaptureMsg {
 }
 
 // #[tokio::main]
+// Entry to the app
 fn main() -> iced::Result {
     let font = Font::External {
         name: "Icons",
         bytes: include_bytes!(r##"./Fonts/IBMPlexMono-Regular.ttf"##),
     };
+    // getting mpsc sender and receiver
     let msg_capture: CaptureMsg = CaptureMsg::get_sync_capturers();
-
+    // Running the app
+    //with_flags are used to transfer data to the app loop
     App::run(Settings {
         antialiasing: false,
         window: window::Settings {
@@ -61,6 +65,7 @@ fn main() -> iced::Result {
 }
 
 // #[derive(Default)]
+//initialising struct and values for running the app
 struct App {
     history: Vec<Coin>,
     theme: style_custom::Theme,
@@ -75,22 +80,23 @@ struct App {
     runtime: Runtime,
     split_button: (button::State,button::State),
 }
-
+// Application method unlike sandbox in iced rs allows to run async commands
 impl Application for App {
     type Message = Message;
     type Flags = (Receiver<Vec<Coin>>, SyncSender<Vec<Coin>>);
     
     type Executor = executor::Default;
-
+//Entry point function before the new gui is created
     fn new(_flags: Self::Flags) -> (Self, Command<Message>) {
         println!("New Function called");
 
         println!("Finished Initialising the thread");
-
+//Creating thread using tokio runtime and passing a clone of the sender to the thread
 
         let rt = Runtime::new().unwrap();
         let cloned_sender = _flags.1.clone();
         let handle = rt.spawn(fetcher::run(cloned_sender, String::from("bnbusdt"))); //BLZUSDT BNBUSDT
+        //Getting initial values from the websocket thread as a vector of predetermined size and receiving it to the current thread and saving it to another vector
         let mut initial_vector = _flags.0.recv().expect("No Message from Thread");
         loop {
             println!("Adding values to display");
@@ -100,7 +106,8 @@ impl Application for App {
                 break;
             }
         }
-        
+        //Adding default values to App struct here the initial values collected from the thread are added to the App struct along with other needed values for the GUI
+        //For having unlimited lifetime ownership of the  sender and receiver of the mpsc is transferred to App Struct
         (
             Self {
                 history: Default::default(),
@@ -127,25 +134,29 @@ impl Application for App {
             Command::none(),
         )
     }
-
+//Specifying title of the GUI
     fn title(&self) -> String {
         String::from("Trading GUI")
     }
-
+//Update is called when a Message is returned from any of the following functions 
     fn update(&mut self, message: Message, clip: &mut Clipboard) -> Command<Message> {
-
+//if statement to do any modification at the begining of the App
 
         if self.Start == true {
             self.Start = false;
 
         }
+        //Handling Message based on the return value(message is an enum)
 
         match message {
+            //no action could be used for future implementations
             Message::Coin_details(val) => {
             }
-
+//This message is called by the subscription function which is currently set to call this as a loop
+//Subscription function handles the clock functions in iced
+//Here is the place where the value App.Received_Details is modified. This value is then used by the view function to add values to the GUI
             Message::TimeKeeper(val) => {
-                
+            
                 print!("Subscription--> Time Keeper\n");
                 let msg = self.reader.recv();
                 let mut res_msg = match msg {
@@ -158,7 +169,9 @@ impl Application for App {
                 print!("Data Received\n");
                 
                 let received_value_length = *&res_msg.len() as i32;
+                //Specifying maximum number of results to be displayed
                  let result_display_length = 20;
+                 //If the vector don't have enough elements to display then get values until the result_display_length+1 values is acheived
                 if self.Received_Details.len() >= result_display_length {
                     for n in 0..received_value_length {
                         self.Received_Details.remove(0);
@@ -167,11 +180,15 @@ impl Application for App {
                 
                 self.Received_Details.append(&mut res_msg);
                   }
+                  //This message handles the key presses that changes the coin symbols. Each message will contain the name of the coin 
+                  //from the button press
             Message::SplitButton(split_button_state, symbol) => {
                 println!("split button pressed");
+                //Auto update of the UI controlled by the subscription function turned off and 
+                //kept idle until new values are added to the self.Received_Details vector
                 self.state = State::Idle;
                 
-                
+                //kills the previous thread fetching a different coin and start a new thread that fetches the values of the current coin
                 {
                 self.handles.abort();
                 self.handles.abort();
@@ -182,7 +199,7 @@ impl Application for App {
                 self.handles = self
                     .runtime
                     .spawn(fetcher::run(self.sender.clone(), symbol));
-                
+                //Values are added to the vector until the length of the vector is enough to display
                 let mut initial_vector = self.reader.recv().expect("No Message from Thread");
                 loop {
                     println!("Adding values to display");
@@ -193,10 +210,14 @@ impl Application for App {
                         break;
                     }
                 }
+                //Previous values of the vector gets cleared 
                 self.Received_Details.clear();
                 println!("{:?}", &self.Received_Details);
+                //New values of the different coin are added 
                 self.Received_Details = initial_vector;
                 println!("{:?}", &self.Received_Details);
+                //self.state specifies if the clock function of the subscription should be used or not . 
+                //Since the values are successfully fetched the app could now use the time function in the subscription function could start working
                 self.state = State::Fetching {
                     last_tick: Instant::now(),
                 };
@@ -207,6 +228,8 @@ impl Application for App {
         Command::none()
         
     }
+    //subscription function is used to call something in a loop in this case it is used to fetch values from the other thread 
+    //so that view function could update the interface
     fn subscription(&self) -> Subscription<Self::Message> {
         println!("Subscription called");
         match self.state {
@@ -217,8 +240,10 @@ impl Application for App {
             }
         }
     }
+    //view function controlls the gui of the element 
 
     fn view(&mut self) -> iced::Element<'_, Self::Message> {
+        //creating the table with headers as headings which is specified here and then the items as rows 
         let table = Table::<Coin> {
             headers: vec![
                 Header {
@@ -265,20 +290,22 @@ impl Application for App {
             
             items: &self.Received_Details,
         };
-
+        //Temporary hard coded buttton to access values of a particular crypto currency
         let split_button = Button::new(&mut self.split_button.0, Text::new("BTCUSDT")).on_press(
             Message::SplitButton(button::State::new(), String::from("btcusdt")),
         );
+        //Temporary hard coded buttton to access values of a particular crypto currency
         let split_button2 = Button::new(&mut self.split_button.1, Text::new("BNBUSDT")).on_press(
             Message::SplitButton(button::State::new(), String::from("bnbusdt")),
         );
+        //column member which distributes it sub member in to column
         let side_pane_col=Column::new().push(split_button).push(split_button2);
-
+        //adding the column member and the table.view in Row which distributes it's children horizontally
         let app_row = Row::with_children(vec![ side_pane_col.into(),table.view(),])
             .spacing(10)
             .align_items(Align::Center).width(Length::Fill)
             .height(Length::Fill);
-
+        //Row is contained inside a Container and is returned
         Container::new(app_row)
             .width(Length::Fill)
             .height(Length::Fill)
@@ -290,6 +317,7 @@ impl Application for App {
     }
 }
 
+//table view implementation
 pub struct Header<T> {
     pub name: String,
     pub value: Box<dyn Fn(&T) -> String>,
