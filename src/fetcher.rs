@@ -5,15 +5,14 @@ use async_tungstenite::{
 };
 use futures::{prelude::*, stream::SplitStream};
 use json::{JsonValue, Error};
-use std::time;
+
 use std::{
     sync::mpsc::SyncSender,
-    thread,
-    time::{Duration, Instant},
+    time::{ Instant},
 };
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
-use iced::button::{self, Button};
+use iced::button;
 // use std::{time, sync::mpsc::{SyncSender}};
 
 pub async fn run(tx: SyncSender<Vec<Coin>>,symbol:String) {
