@@ -17,6 +17,18 @@
             }
         }
     }
+    pub struct SidePane;
+    impl iced::container::StyleSheet for SidePane{
+        fn style(&self) -> Style{
+        Style{
+            border_radius:4.0,
+            border_width:3.0,
+            border_color: Color::from_rgb8(28, 25, 23),
+            background:Some(Background::Color(Color::from_rgb8(30, 41, 59))),
+            ..Default::default()
+        }
+    }
+    }
     // pub struct MainBody;
     // impl iced::container::StyleSheet for MainBody{
     //     fn style(&self)-> Style{
@@ -132,7 +144,7 @@
         }
     }
 
-    mod light {
+    pub mod light {
         use iced::{button, Color, Vector};
 
         pub struct Button;
@@ -158,7 +170,7 @@
         }
     }
 
-    mod dark {
+    pub mod dark {
         use iced::{
             button, checkbox, container, progress_bar, radio, rule, scrollable,
             slider, text_input,  Color,

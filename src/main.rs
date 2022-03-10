@@ -2,6 +2,7 @@ mod fetcher;
 
 mod style_custom;
 
+use futures::TryFutureExt;
 use iced::{container::Style, Application, Column, Command, Container, Element, Font, Row, Text};
 
 use iced::button::{self, Button};
@@ -15,7 +16,7 @@ use tokio::task::JoinHandle;
 
 use iced::{Align, Clipboard};
 // use std::ops::Index;
-use std::sync::mpsc::SyncSender;
+use std::sync::mpsc::{self,Sender,SyncSender,Receiver};
 // use std::sync::mpsc::SyncSender;
 use std::time::{Duration, Instant};
 
@@ -23,7 +24,7 @@ use fetcher::Coin;
 use fetcher::Message;
 use fetcher::State;
 
-use std::sync::mpsc::Receiver;
+// use std::sync::mpsc::Receiver;
 use tokio::runtime::Runtime;
 // #[derive(Default)]
 //Creates mpsc sender and receiver transferring data between threads
@@ -37,7 +38,7 @@ impl CaptureMsg {
     //     CaptureMsg { tx: tx, rx: rx }
     // }
     pub fn get_sync_capturers() -> Self {
-        let (tx, rx) = sync_channel(0);
+        let (tx, rx) = sync_channel(1);
         CaptureMsg { tx: tx, rx: rx }
     }
 }
@@ -67,7 +68,7 @@ fn main() -> iced::Result {
 // #[derive(Default)]
 //initialising struct and values for running the app
 struct App {
-    history: Vec<Coin>,
+    table_result_row:usize,
     theme: style_custom::Theme,
     Start: bool,
     headers: Vec<String>,
@@ -79,6 +80,7 @@ struct App {
     handles: JoinHandle<()>,
     runtime: Runtime,
     split_button: (button::State,button::State),
+    exit_sender:Sender<bool>,
 }
 // Application method unlike sandbox in iced rs allows to run async commands
 impl Application for App {
@@ -95,7 +97,8 @@ impl Application for App {
 
         let rt = Runtime::new().unwrap();
         let cloned_sender = _flags.1.clone();
-        let handle = rt.spawn(fetcher::run(cloned_sender, String::from("bnbusdt"))); //BLZUSDT BNBUSDT
+        let (exit_mpsc_sender, exit_mpsc_receiver) = mpsc::channel();
+        let handle = rt.spawn(fetcher::run(cloned_sender, String::from("bnbusdt"),exit_mpsc_receiver)); //BLZUSDT BNBUSDT
         //Getting initial values from the websocket thread as a vector of predetermined size and receiving it to the current thread and saving it to another vector
         let mut initial_vector = _flags.0.recv().expect("No Message from Thread");
         loop {
@@ -106,11 +109,12 @@ impl Application for App {
                 break;
             }
         }
+        
         //Adding default values to App struct here the initial values collected from the thread are added to the App struct along with other needed values for the GUI
         //For having unlimited lifetime ownership of the  sender and receiver of the mpsc is transferred to App Struct
         (
             Self {
-                history: Default::default(),
+                table_result_row:20,
                 theme: Default::default(),
                 Start: true,
                 headers: vec![
@@ -128,6 +132,7 @@ impl Application for App {
                 handles: handle,
                 runtime: rt,
                 split_button: (button::State::new(),button::State::new()),
+                exit_sender:exit_mpsc_sender
             },
 
             // Command::perform(fetcher::get_result(self.reader),  |_| Message::Coin_details(())),
@@ -170,9 +175,9 @@ impl Application for App {
                 
                 let received_value_length = *&res_msg.len() as i32;
                 //Specifying maximum number of results to be displayed
-                 let result_display_length = 20;
+                //  let result_display_length = 20;
                  //If the vector don't have enough elements to display then get values until the result_display_length+1 values is acheived
-                if self.Received_Details.len() >= result_display_length {
+                if self.Received_Details.len() >= self.table_result_row {
                     for n in 0..received_value_length {
                         self.Received_Details.remove(0);
                     }
@@ -187,25 +192,22 @@ impl Application for App {
                 //Auto update of the UI controlled by the subscription function turned off and 
                 //kept idle until new values are added to the self.Received_Details vector
                 self.state = State::Idle;
-                
-                //kills the previous thread fetching a different coin and start a new thread that fetches the values of the current coin
-                {
-                self.handles.abort();
-                self.handles.abort();
-                }
+                self.exit_sender.send(true);
 
                 println!("Killed the other threads");
-
+                let (exit_mpsc_sender, exit_mpsc_receiver) = mpsc::channel();
                 self.handles = self
                     .runtime
-                    .spawn(fetcher::run(self.sender.clone(), symbol));
+                    .spawn(fetcher::run(self.sender.clone(), symbol,exit_mpsc_receiver));
+                self.exit_sender=exit_mpsc_sender;
+                
                 //Values are added to the vector until the length of the vector is enough to display
                 let mut initial_vector = self.reader.recv().expect("No Message from Thread");
                 loop {
                     println!("Adding values to display");
                     let mut val = self.reader.recv().expect("No Message from Thread");
                     initial_vector.append(&mut val);
-                    if initial_vector.len() > 20 {
+                    if initial_vector.len() > self.table_result_row {
                         println!("BREAKING");
                         break;
                     }
@@ -246,21 +248,21 @@ impl Application for App {
         //creating the table with headers as headings which is specified here and then the items as rows 
         let table = Table::<Coin> {
             headers: vec![
-                Header {
-                    name: "Stream".to_string(),
-                    value: Box::new(|Coin| Coin.Stream.clone()),
-                    sort_value: Box::new(|Coin| Coin.Stream.clone()),
-                },
-                Header {
-                    name: "Symbol".to_string(),
-                    value: Box::new(|Coin| Coin.Symbol.clone()),
-                    sort_value: Box::new(|Coin| Coin.Symbol.clone()),
-                },
-                Header {
-                    name: "EventType".to_string(),
-                    value: Box::new(|Coin| Coin.EventType.clone()),
-                    sort_value: Box::new(|Coin| Coin.EventType.clone()),
-                },
+                // Header {
+                //     name: "Stream".to_string(),
+                //     value: Box::new(|Coin| Coin.Stream.clone()),
+                //     sort_value: Box::new(|Coin| Coin.Stream.clone()),
+                // },
+                // Header {
+                //     name: "Symbol".to_string(),
+                //     value: Box::new(|Coin| Coin.Symbol.clone()),
+                //     sort_value: Box::new(|Coin| Coin.Symbol.clone()),
+                // },
+                // Header {
+                //     name: "EventType".to_string(),
+                //     value: Box::new(|Coin| Coin.EventType.clone()),
+                //     sort_value: Box::new(|Coin| Coin.EventType.clone()),
+                // },
                 Header {
                     name: "BidPriceLevel".to_string(),
                     value: Box::new(|Coin| Coin.BidPriceLevel.clone()),
@@ -281,27 +283,33 @@ impl Application for App {
                     value: Box::new(|Coin| Coin.AsksQuantity.clone()),
                     sort_value: Box::new(|Coin| Coin.AsksQuantity.clone()),
                 },
-                Header {
-                    name: "Event Time".to_string(),
-                    value: Box::new(|Coin| Coin.EventTime.to_string()),
-                    sort_value: Box::new(|Coin| Coin.EventTime.to_string()),
-                },
+                // Header {
+                //     name: "Event Time".to_string(),
+                //     value: Box::new(|Coin| Coin.EventTime.to_string()),
+                //     sort_value: Box::new(|Coin| Coin.EventTime.to_string()),
+                // },
             ],
             
             items: &self.Received_Details,
         };
         //Temporary hard coded buttton to access values of a particular crypto currency
-        let split_button = Button::new(&mut self.split_button.0, Text::new("BTCUSDT")).on_press(
+        let split_button = Button::new(&mut self.split_button.0, Text::new("BTCUSDT")).style(style_custom::dark::Button).on_press(
             Message::SplitButton(button::State::new(), String::from("btcusdt")),
         );
         //Temporary hard coded buttton to access values of a particular crypto currency
-        let split_button2 = Button::new(&mut self.split_button.1, Text::new("BNBUSDT")).on_press(
+        let split_button2 = Button::new(&mut self.split_button.1, Text::new("BNBUSDT")).style(style_custom::dark::Button).on_press(
             Message::SplitButton(button::State::new(), String::from("bnbusdt")),
         );
+        let active_coin_label=Text::new(self.Received_Details[0].Symbol.to_string()).size(50).color(Color::WHITE);
+        
         //column member which distributes it sub member in to column
-        let side_pane_col=Column::new().push(split_button).push(split_button2);
+        let side_pane_col=Column::new().push(split_button).push(split_button2).align_items(Align::Center);
+        let side_pane_col_container=Container::new(side_pane_col).height(Length::Units(100)).style(style_custom::SidePane).padding(5).center_x()
+        .center_y();
+        let main_side_pane=Column::new().push(active_coin_label).push(side_pane_col_container);
+        let main_side_pane_container=Container::new(main_side_pane).style(style_custom::SidePane).height(Length::Fill).padding(5);
         //adding the column member and the table.view in Row which distributes it's children horizontally
-        let app_row = Row::with_children(vec![ side_pane_col.into(),table.view(),])
+        let app_row = Row::with_children(vec![ main_side_pane_container.into(),table.view(),])
             .spacing(10)
             .align_items(Align::Center).width(Length::Fill)
             .height(Length::Fill);
@@ -346,6 +354,7 @@ impl<'a, T> Table<'a, T> {
             .style(style_custom::Cell)
             .width(iced::Length::Fill)
             .align_y(Align::Center)
+            .align_x(Align::Center)
             .into()
     }
     pub fn view<'element>(&self) -> Element<'element, Message> {
@@ -367,7 +376,7 @@ impl<'a, T> Table<'a, T> {
         });
         // let mut button_state = button::State::new();
 
-        let table = Column::new().push(headers).push(rows);
+        let table = Column::new().push(headers).push(rows).align_items(Align::Center);
         Container::new(table)
             .style(style_custom::Theme::Dark)
             .into()
